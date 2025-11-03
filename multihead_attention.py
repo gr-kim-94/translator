@@ -1,9 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
-
-
 from transformers import AutoTokenizer
 import torch
 import torch.nn as nn
@@ -12,7 +9,8 @@ import matplotlib.pyplot as plt
 import math
 
 class MultiHeadAttention:
-    def __init__(self, text):
+    def __init__(self, text, masked = False):
+        self.masked = masked
 
         self.tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
         self.d_model = 4                         # 논문 기준은 512
@@ -38,7 +36,6 @@ class MultiHeadAttention:
 
         self.output = self.attention_input(self.X_input)
         self.out = self.concat_attention(self.output)
-        
 
     def tokenizer_text(self, text: str):
         # 1️⃣ 토큰화 + 숫자화
@@ -129,6 +126,13 @@ class MultiHeadAttention:
         scores = torch.matmul(transposed_Q, transposed_K.transpose(-2, -1))
         # 결과: (batch, num_heads, seq_len, seq_len) -> (몇개의 문장인지, 몇개의 head인지, Q 토큰 위치, K 토큰 위치)
         print("scores shape:", scores.shape)
+        
+        if self.masked:
+            # decoder에서 적용해야되는 부분, scores.masked_fill(0) mask가 True인 위치를 value로 채워 넣어 무시되게 한다. 이전 데이터만 인식할 수 있도록!
+            mask = torch.tril(torch.ones(self.max_position, self.max_position))  # 하삼각행렬 : 행렬의 대각선 아래쪽부분만 1로 남기고 나머지는 0으로 만들게 함.
+            print(mask)
+            scores = scores.masked_fill(mask == 0, float('-inf'))
+            print(scores)
 
         # Q * K^T / sqrt(d_k)
         scores = scores / math.sqrt(head_dim)
@@ -161,6 +165,7 @@ class MultiHeadAttention:
         print("Final Output shape:", out.shape)  # (batch, seq_len, d_model)
 
         return out
+
 
 if __name__ == "__main__":
     text = "I like coffee in the morning because it helps me wake up and stay focused."

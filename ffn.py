@@ -1,31 +1,33 @@
-# drop out : 데이터의 특정규칙들을 제외하고 날리는 것.
-drop_out_nd = 0.1 # 드롭아웃 비율, (overffitting 되었다면 0.1보다 더 높게 설정, underffitting 되었다면 0.1보다 더 낮게 설정)
+from transformers import AutoTokenizer
+import torch
+import torch.nn as nn
+import numpy as np
+import matplotlib.pyplot as plt
+from addnorm import AddNorm
+from multihead_attention import MultiHeadAttention
 
-def add_norm(x, out, d_model) -> torch.Tensor:
-    norm = nn.LayerNorm(d_model)
-    dropout = nn.Dropout(drop_out_nd)
+class FFNAttention:
+    def __init__(self, out, residual, d_model):
+        self.drop_out_nd = 0.1
+        self.d_ff = 4*d_model # 내부 확장 차원 (보통 2048 = 4×d_model)
 
-    # residual connection : 입력 + 서브레이어 출력
-    # dropout : 과적합 방지를 위해 일부 뉴런을 랜덤하게 비활성화 : sublayer 출력에 적용
-    # norm() : 합친 결과에 정규화 적용
-    residual = norm(x + dropout(out))
+        net = nn.Sequential(
+            nn.Linear(d_model, self.d_ff),
+            nn.ReLU(),
+            nn.Dropout(self.drop_out_nd),
+            nn.Linear(self.d_ff, d_model),
+        )
 
-    return residual
+        self.ffn_out = net(residual)
+        print("FFN Output shape:", self.ffn_out.shape)
 
-def ffn(d_model, residual, net_output):
-    d_ff = 4*d_model # 내부 확장 차원 (보통 2048 = 4×d_model)
+if __name__ == "__main__":
+    drop_out_nd = 0.1
 
-    net = nn.Sequential(
-        nn.Linear(d_model, d_ff),
-        nn.ReLU(),
-        nn.Dropout(drop_out_nd),
-        nn.Linear(d_ff, d_model),
-    )
+    text = "I like coffee in the morning because it helps me wake up and stay focused."
+    mha = MultiHeadAttention(text) 
+    print("==== mha.out : ", mha.out.shape) 
+    addNorm = AddNorm(mha.X_input, mha.out, mha.d_model, drop_out_nd)
 
-    net_output = net(residual)
-    print("FFN Output shape:", net_output.shape)
-
-    add_norm(residual, net_output, d_model)
-    print("FFN Add & Norm shape:", type(residual), residual.shape) 
-
-    return residual
+    ffn = FFNAttention(mha.out, addNorm.residual, mha.d_model)
+    print(ffn.ffn_out)
