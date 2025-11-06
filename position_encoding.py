@@ -6,7 +6,7 @@ import math
 class PositionalEncoding(nn.Module):
     """Sinusoidal positional encoding with embedding scaling, as in Vaswani et al."""
 
-    def __init__(self, d_model: int, max_len: int = 5000) -> None:
+    def __init__(self, d_model: int, drop_out_nd, max_len: int = 5000) -> None:
         '''
         max_len : token list의 최대 사이즈
         -> attention 연산은 토큰이 너무 많아지면 메모리 사용량도 n², 시간복잡도도 O(n²)라서 컴퓨터 부하가 심해짐.
@@ -16,6 +16,7 @@ class PositionalEncoding(nn.Module):
         '''
         super().__init__()
         position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        self.dropout = nn.Dropout(drop_out_nd)
 
         div_term = torch.exp(                                # 지수 함수 (exponential)로 원래 비율 복원
             torch.arange(0, d_model, 2, dtype=torch.float32) # [0, 2, ...] -> 짝수에대한 값. d_model이 4라면 [0, 2]
@@ -45,4 +46,4 @@ class PositionalEncoding(nn.Module):
         pe = self.pe[: seq_len].unsqueeze(0) # seq_len만큼 사용하기 위해. unsqueeze(0) : 0 - 추가할 차원의 위치. (batch_size, seq_len, d_model)
         print("x shape : ", x.shape, ", new pe shape : ", pe.shape)
 
-        return x + pe
+        return self.dropout(x + pe)

@@ -42,6 +42,7 @@ class DecoderLayer(nn.Module):
         residual = self.self_add_norm(x, self_attn_out)
 
         # Encoder Output + Mask된 Decoder 1차 Output -> Decoder 2차 MultiHeadAttention
+        # K, V = memory (Encoder Output)
         cross_attn_out, _ = self.cross_attention(residual, memory, memory, mask=memory_mask)
         cross_residual = self.cross_add_norm(residual, cross_attn_out)
     

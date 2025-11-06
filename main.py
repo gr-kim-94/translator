@@ -30,7 +30,8 @@ class TransformerModel(nn.Module):
         vocab_size = self.tokenizer.vocab_size
         self.src_embedding = nn.Embedding(vocab_size, d_model) # 입력값에대한 embedding 객체
         self.tgt_embedding = nn.Embedding(vocab_size, d_model) # 출력값에대한 embedding 객체
-        self.positional_encoding = PositionalEncoding(d_model, max_len=max_position_embeddings)
+        self.tgt_embedding_weight = self.tgt_embedding.weight
+        self.positional_encoding = PositionalEncoding(d_model, dropout, max_len=max_position_embeddings)
 
         self.encoder_layers = nn.ModuleList(
             # Encoder * N(num_layers)
@@ -43,6 +44,9 @@ class TransformerModel(nn.Module):
             [DecoderLayer(d_model, num_heads, dropout) for _ in range(num_layers)]
         )
         self.decoder_norm = nn.LayerNorm(d_model)
+
+        self.generator = nn.Linear(d_model, vocab_size, bias=False)
+        self.generator.weight = self.tgt_embedding_weight
 
 
     def _expand_padding_mask(self, attention_mask: torch.Tensor) -> torch.Tensor:
@@ -142,13 +146,13 @@ class TransformerModel(nn.Module):
         memory, memory_mask = self.encode(src_text) 
         decoded, _ = self.decode(tgt_text, memory, memory_mask)
 
-        return memory, decoded
+        logits = self.generator(decoded)
+        return logits
     
 
 if __name__ == "__main__":
     src = "I like coffee in the morning because it helps me wake up and stay focused."
     tgt = "J'aime le café le matin car il m'aide à me réveiller."
     tf = TransformerModel(d_model=128, num_heads=8, num_layers=2)
-    memory, decoded = tf(src, tgt)
-    print("Encoder output shape:", memory.shape)
-    print("Decoder output shape:", decoded.shape)
+    logits = tf(src, tgt)
+    print("Result output :", logits, logits.shape)

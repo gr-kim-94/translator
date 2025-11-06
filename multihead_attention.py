@@ -22,6 +22,7 @@ class ScaledDotProductAttention(nn.Module):
         # q,k,v : (batch, num_heads, seq_len, head_dim)
         head_dim = query.size(-1)
         # 메모리 효율적인 행렬 곱셈
+        # q_1 * k_2, q_1 * k_3,... 모든 토큰에대해 내곱을 해주는 부분.
         scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(head_dim)
         print("Scaled Scores shape:", scores.shape)
 
@@ -43,6 +44,7 @@ class ScaledDotProductAttention(nn.Module):
 
         # softmax(Q * K^T / sqrt(d_k)) * V
         output = torch.matmul(attn_weights, value)
+        print("Scaled Dot Product Attention Output : ", output[0], "\n====\nAttention Weight : ", attn_weights[0])
         return output, attn_weights
 
 
@@ -106,5 +108,5 @@ class MultiHeadAttention(nn.Module):
         attn_output = self.out_proj(attn_output)
         
         # 서브레이어 출력에 dropout 적용
-        attn_output = self.dropout(attn_output)
+        # attn_output = self.dropout(attn_output)
         return attn_output, attn_weights

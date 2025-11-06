@@ -17,8 +17,8 @@ class FFNAttention(nn.Module):
         net = nn.Sequential(
             self.linear,
             self.relu,
-            self.dropout,
             self.linear_t,
+            # self.dropout
         )
 
         ffn_out = net(residual)
