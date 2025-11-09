@@ -27,8 +27,8 @@ class DecoderLayer(nn.Module):
         self,
         x: torch.Tensor,
         memory: torch.Tensor,
-        self_mask: Optional[torch.Tensor],
-        memory_mask: Optional[torch.Tensor],
+        self_mask: Optional[torch.Tensor], # decoder의 mask. 이후 단어 -\inf
+        memory_mask: Optional[torch.Tensor], # encoder의 padding mask * decoder의 padding mask
     ) -> torch.Tensor:
         '''
         x : tgt token embedding + positional encoding

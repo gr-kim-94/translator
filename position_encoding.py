@@ -15,27 +15,26 @@ class PositionalEncoding(nn.Module):
         -> 이때 각 문장간의 길이를 맞추기 위해서도 사용하는게 padding 처리
         '''
         super().__init__()
-        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        self.d_model = d_model
+        self.position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
         self.dropout = nn.Dropout(drop_out_nd)
 
-        div_term = torch.exp(                                # 지수 함수 (exponential)로 원래 비율 복원
+        self.div_term = torch.exp(                                # 지수 함수 (exponential)로 원래 비율 복원
             torch.arange(0, d_model, 2, dtype=torch.float32) # [0, 2, ...] -> 짝수에대한 값. d_model이 4라면 [0, 2]
             * (-math.log(10000.0) / d_model)                 # 로그 변환 
         )
         pe = torch.zeros(max_len, d_model, dtype=torch.float32) # d_model 차원만큼 0으로 초기화된 행렬 생성
-        pe[:, 0::2] = torch.sin(position * div_term)            # `0::2` : 짝수 차원 (0, 2, 4, …) -> sin 파형
-        pe[:, 1::2] = torch.cos(position * div_term)            # `1::2` : 홀수 차원 (1, 3, 5, …) -> cos 파형
         self.register_buffer("pe", pe, persistent=False)        # register_buffer : PyTorch에서 중요한 메모리 관리 메커니즘. -> self.pe = pe로 대체할 수 있음.
                                                                 # 모델의 파라미터는 아니지만(학습되지 않음), GPU에 올려두고 모델과 함께 사용해야 하는 텐서를 등록할 때 사용
                                                                 # persistent : 모델을 저장할 때 이 버퍼는 저장 여부 결정
-        self.d_model = d_model
-
-        print("Positional Encoding : ", self.pe)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         '''
         x : embedding된 토큰 리스트 Tensor
         '''
+        self.pe[:, 0::2] = torch.sin(self.position * self.div_term)            # `0::2` : 짝수 차원 (0, 2, 4, …) -> sin 파형
+        self.pe[:, 1::2] = torch.cos(self.position * self.div_term)            # `1::2` : 홀수 차원 (1, 3, 5, …) -> cos 파형
+
         # Positional Encoding + Embedding
         # x.shape : (batch_size, seq_len, d_model)
         # pe.shape : (seq_len, d_model)

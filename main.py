@@ -7,6 +7,8 @@ from encoder_layer import EncoderLayer
 from decoder_layer import DecoderLayer
 from position_encoding import PositionalEncoding
 
+import pandas as pd
+
 class TransformerModel(nn.Module):
     """ Start!
         Attention Is All You Need의 인코더-디코더 구조를 그대로 재현한 학습용 구현.
@@ -140,7 +142,10 @@ class TransformerModel(nn.Module):
         return decoded, attention_mask
 
     
-    def forward(self, src_text: str, tgt_text: str) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, 
+                src_text: str, 
+                tgt_text: str
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         # memory : encoder output K/V
         # memory_mask : encoder padding 여부를 알 수 있는 mask.
         memory, memory_mask = self.encode(src_text) 
@@ -148,8 +153,81 @@ class TransformerModel(nn.Module):
 
         logits = self.generator(decoded)
         return logits
-    
 
+    # def predict(
+    #     self,
+    #     src_texts,
+    #     max_len=64,
+    #     device=None,
+    #     bos_token="[CLS]",
+    #     eos_token="[SEP]",
+    # ):
+    #     device = device or next(self.parameters()).device
+    #     self.eval()
+
+    #     bos_id = self.tokenizer.convert_tokens_to_ids(bos_token)
+    #     eos_id = self.tokenizer.convert_tokens_to_ids(eos_token)
+        
+    #     memory, memory_mask = self.encode(src_texts)
+        
+    #     batch_size = memory.size(0)
+    #     generated = torch.full((batch_size, 1), bos_id, dtype=torch.long, device=device)
+    #     attn = torch.ones_like(generated)
+
+    #     finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+    #     for _ in range(max_len):
+    #         logits = self.decode(
+    #             memory,
+    #             generated,
+    #             src_attention_mask=memory_mask,
+    #             tgt_attention_mask=attn,
+    #         )
+    #         next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+    #         generated = torch.cat([generated, next_token], dim=1)
+    #         attn = torch.ones_like(generated)
+
+    #         finished |= next_token.squeeze(1) == eos_id
+    #         if finished.all():
+    #             break
+
+    #     texts = tokenizer.batch_decode(generated.tolist(), skip_special_tokens=True)
+    #     return texts
+
+
+# if __name__ == "__main__":
+#     path = "./data/en_fr_small.tsv"
+#     df = pd.read_csv(path, sep="\t")
+
+#     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     model = TransformerModel(d_model=128, num_heads=8, num_layers=2)#.to(device)
+#     optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+#     pad_id = model.tokenizer.pad_token_id
+#     loss_fn = nn.CrossEntropyLoss(ignore_index=pad_id)
+
+#     # 같은 데이터셋을 3번 학습시킨다.
+#     for epoch in range(3):
+#         model.train()
+#         for i in range(len(df)):
+#             batch = df.iloc[i]
+#             print(batch)
+#             src = model.tokenizer(batch["en"], return_tensors="pt", padding=True)#.to(device)
+#             tgt = model.tokenizer(batch["fr"], return_tensors="pt", padding=True)#.to(device)
+
+#             decoder_inputs = tgt["input_ids"][:, :-1]
+#             decoder_mask = tgt["attention_mask"][:, :-1]
+#             labels = tgt["input_ids"][:, 1:]
+
+#             logits = model(
+#                 src["input_ids"],
+#                 decoder_inputs,
+#                 src_attention_mask=src["attention_mask"],
+#                 tgt_attention_mask=decoder_mask,
+#             )
+#             loss = loss_fn(logits.reshape(-1, logits.size(-1)), labels.reshape(-1))
+#             optimizer.zero_grad()
+#             loss.backward()
+#             optimizer.step()
+    
 if __name__ == "__main__":
     src = "I like coffee in the morning because it helps me wake up and stay focused."
     tgt = "J'aime le café le matin car il m'aide à me réveiller."

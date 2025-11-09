@@ -28,10 +28,11 @@ class ScaledDotProductAttention(nn.Module):
 
         # 결과: (batch, num_heads, seq_len, seq_len) -> (몇개의 문장인지, 몇개의 head인지, Q 토큰 위치, K 토큰 위치)
         if mask is not None:
-            if mask.dim() == 2:
-                mask = mask.unsqueeze(0).unsqueeze(0)
-            elif mask.dim() == 3:
+            dim = mask.dim()
+            print("Attention Mask Dim : ", dim, ", Attention Mask Shape : ", mask.shape)
+            if dim == 3:
                 mask = mask.unsqueeze(1)
+            print("Attention New Mask Shape : ", mask.shape)
             scores = scores.masked_fill(mask == 0, float("-inf"))
 
 
