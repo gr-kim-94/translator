@@ -9,6 +9,9 @@ from position_encoding import PositionalEncoding
 
 import pandas as pd
 
+# nn.Module > training 변수
+# def train(self, mode: bool = True)
+# def eval(self) -> training = False 하는 함수
 class TransformerModel(nn.Module):
     """ Start!
         Attention Is All You Need의 인코더-디코더 구조를 그대로 재현한 학습용 구현.
@@ -50,6 +53,18 @@ class TransformerModel(nn.Module):
         self.generator = nn.Linear(d_model, vocab_size, bias=False)
         self.generator.weight = self.tgt_embedding_weight
 
+    def _create_tokenizer(self, text: str) -> Tuple[torch.Tensor, torch.Tensor]:
+        tokens = self.tokenizer(
+            text,
+            return_tensors="pt",
+            padding=True,    # 배치 내 가장 긴 시퀀스까지 패드 처리 -> 문장의 길이가 모두 다르기때문에 통일 시켜주는 작업이 padding.
+            #truncation=True,  # max_length를 초과하는 시퀀스를 잘라내기
+            #max_length=10    # 최대 10개 토큰 길이로 잘라내거나 채우기
+        )
+        token_ids = tokens["input_ids"]
+        attention_mask = tokens["attention_mask"]
+        return token_ids, attention_mask
+
 
     def _expand_padding_mask(self, attention_mask: torch.Tensor) -> torch.Tensor:
         """(batch, seq_len) → (batch, 1, 1, seq_len)."""
@@ -88,16 +103,13 @@ class TransformerModel(nn.Module):
         src_valid = src_attention_mask.unsqueeze(1)
         return tgt_valid * src_valid
 
-    def encode(self, text: str) -> Tuple[torch.Tensor, torch.Tensor]:
-        tokens = self.tokenizer(
-            text,
-            return_tensors="pt",
-            padding=True,    # 배치 내 가장 긴 시퀀스까지 패드 처리 -> 문장의 길이가 모두 다르기때문에 통일 시켜주는 작업이 padding.
-            #truncation=True,  # max_length를 초과하는 시퀀스를 잘라내기
-            #max_length=10    # 최대 10개 토큰 길이로 잘라내거나 채우기
-        )
-        token_ids = tokens["input_ids"]
-        attention_mask = tokens["attention_mask"]
+    def encode(self, 
+               ids: torch.Tensor,
+               mask: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        token_ids = ids
+        attention_mask = mask
+
         print("token_ids : ", token_ids, token_ids.shape)
         print("token_attention_mask : ", attention_mask, attention_mask.shape)
 
@@ -115,19 +127,13 @@ class TransformerModel(nn.Module):
 
     def decode(
         self,
-        text: str,
+        ids: torch.Tensor,
+        mask: torch.Tensor,
         memory: torch.Tensor,
         memory_attention_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        tokens = self.tokenizer(
-            text,
-            return_tensors="pt",
-            padding=True,    # 배치 내 가장 긴 시퀀스까지 패드 처리 -> 문장의 길이가 모두 다르기때문에 통일 시켜주는 작업이 padding.
-            #truncation=True,  # max_length를 초과하는 시퀀스를 잘라내기
-            #max_length=10    # 최대 10개 토큰 길이로 잘라내거나 채우기
-        )
-        token_ids = tokens["input_ids"]
-        attention_mask = tokens["attention_mask"]
+        token_ids = ids
+        attention_mask = mask
 
         x = self.tgt_embedding(token_ids)
         x = self.positional_encoding(x)
@@ -148,22 +154,27 @@ class TransformerModel(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # memory : encoder output K/V
         # memory_mask : encoder padding 여부를 알 수 있는 mask.
-        memory, memory_mask = self.encode(src_text) 
-        decoded, _ = self.decode(tgt_text, memory, memory_mask)
+
+        self.train() # 학습 모드 전환
+
+        src_token_ids, src_mask = self._create_tokenizer(src_text)
+        tgt_token_ids, tgt_mask = self._create_tokenizer(tgt_text)
+
+        memory, memory_mask = self.encode(src_token_ids, src_mask) 
+        decoded, _ = self.decode(tgt_token_ids, tgt_mask, memory, memory_mask)
 
         logits = self.generator(decoded)
         return logits
 
-    # def predict(
-    #     self,
-    #     src_texts,
-    #     max_len=64,
-    #     device=None,
-    #     bos_token="[CLS]",
-    #     eos_token="[SEP]",
-    # ):
-    #     device = device or next(self.parameters()).device
-    #     self.eval()
+    def predict(
+        self,
+        src_texts,
+        max_len=64,
+        device=None,
+        bos_token="[CLS]",
+        eos_token="[SEP]",
+    ):
+        self.eval() # 평가 모드 전환
 
     #     bos_id = self.tokenizer.convert_tokens_to_ids(bos_token)
     #     eos_id = self.tokenizer.convert_tokens_to_ids(eos_token)
