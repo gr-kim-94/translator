@@ -45,7 +45,7 @@ class ScaledDotProductAttention(nn.Module):
 
         # softmax(Q * K^T / sqrt(d_k)) * V
         output = torch.matmul(attn_weights, value)
-        print("Scaled Dot Product Attention Output : ", output[0], "\n====\nAttention Weight : ", attn_weights[0])
+        # print("Scaled Dot Product Attention Output : ", output[0], "\n====\nAttention Weight : ", attn_weights[0])
         return output, attn_weights
 
 

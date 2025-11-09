@@ -53,6 +53,11 @@ class TransformerModel(nn.Module):
         self.generator = nn.Linear(d_model, vocab_size, bias=False)
         self.generator.weight = self.tgt_embedding_weight
 
+        pad_id = self.tokenizer.pad_token_id
+        self.criterion = nn.CrossEntropyLoss(ignore_index=pad_id)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-4)
+
+
     def _create_tokenizer(self, text: str) -> Tuple[torch.Tensor, torch.Tensor]:
         tokens = self.tokenizer(
             text,
@@ -110,8 +115,11 @@ class TransformerModel(nn.Module):
         token_ids = ids
         attention_mask = mask
 
-        print("token_ids : ", token_ids, token_ids.shape)
-        print("token_attention_mask : ", attention_mask, attention_mask.shape)
+        print("encode > token_ids : ", token_ids, token_ids.shape)
+        print("encode > token_attention_mask : ", attention_mask, attention_mask.shape)
+
+        for t in token_ids[0]:
+            print(f"{t}\t -> {self.tokenizer.decode([t])}")
 
         x = self.src_embedding(token_ids)
         x = self.positional_encoding(x)
@@ -149,22 +157,37 @@ class TransformerModel(nn.Module):
 
     
     def forward(self, 
-                src_text: str, 
-                tgt_text: str
+                src_text: str = None, 
+                tgt_text: str = None,
+                df: pd.DataFrame = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # memory : encoder output K/V
         # memory_mask : encoder padding 여부를 알 수 있는 mask.
 
         self.train() # 학습 모드 전환
 
-        src_token_ids, src_mask = self._create_tokenizer(src_text)
-        tgt_token_ids, tgt_mask = self._create_tokenizer(tgt_text)
+        if df is not None and not df.isnull().values.any():
+            for epoch in range(len(df)):
+                for _, row in df.iterrows():
+                    src, tgt = row["en"], row["fr"]
+                    print(src, "=>", tgt)
+                    logits = tf(src, tgt)                   # (batch, tgt_len, vocab)
+                    target_ids = tf._create_tokenizer(tgt)[0][:, 1:]   # shift-right
+                    pred = logits[:, :-1, :].reshape(-1, logits.size(-1))
+                    loss = self.criterion(pred, target_ids.reshape(-1))
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+            torch.save(tf.state_dict(), "checkpoint.pt") # 가중치 파일 : 학습 루프가 끝난 시점의 파라미터들을 직렬화해서 저장해둔것.
+        else: 
+            src_token_ids, src_mask = self._create_tokenizer(src_text)
+            tgt_token_ids, tgt_mask = self._create_tokenizer(tgt_text)
 
-        memory, memory_mask = self.encode(src_token_ids, src_mask) 
-        decoded, _ = self.decode(tgt_token_ids, tgt_mask, memory, memory_mask)
+            memory, memory_mask = self.encode(src_token_ids, src_mask) 
+            decoded, _ = self.decode(tgt_token_ids, tgt_mask, memory, memory_mask)
 
-        logits = self.generator(decoded)
-        return logits
+            logits = self.generator(decoded)
+            return logits
 
     def predict(
         self,
@@ -176,72 +199,48 @@ class TransformerModel(nn.Module):
     ):
         self.eval() # 평가 모드 전환
 
-    #     bos_id = self.tokenizer.convert_tokens_to_ids(bos_token)
-    #     eos_id = self.tokenizer.convert_tokens_to_ids(eos_token)
-        
-    #     memory, memory_mask = self.encode(src_texts)
-        
-    #     batch_size = memory.size(0)
-    #     generated = torch.full((batch_size, 1), bos_id, dtype=torch.long, device=device)
-    #     attn = torch.ones_like(generated)
+        src_token_ids, src_mask = self._create_tokenizer(src_texts)
+        memory, memory_mask = self.encode(src_token_ids, src_mask)  
 
-    #     finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
-    #     for _ in range(max_len):
-    #         logits = self.decode(
-    #             memory,
-    #             generated,
-    #             src_attention_mask=memory_mask,
-    #             tgt_attention_mask=attn,
-    #         )
-    #         next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
-    #         generated = torch.cat([generated, next_token], dim=1)
-    #         attn = torch.ones_like(generated)
+        bos_id = self.tokenizer.convert_tokens_to_ids(bos_token)
+        eos_id = self.tokenizer.convert_tokens_to_ids(eos_token)
 
-    #         finished |= next_token.squeeze(1) == eos_id
-    #         if finished.all():
-    #             break
+        batch_size = memory.size(0)
+        generated = torch.full((batch_size, 1), bos_id, dtype=torch.long)
+        attn = torch.ones_like(generated)
 
-    #     texts = tokenizer.batch_decode(generated.tolist(), skip_special_tokens=True)
-    #     return texts
+        finished = torch.zeros(batch_size, dtype=torch.bool)
 
+        for _ in range(max_len):
+            decoded, _ = self.decode(
+                generated,
+                attn,
+                memory,
+                memory_mask
+            )
+            logits = self.generator(decoded)
+            next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+            generated = torch.cat([generated, next_token], dim=1)
+            attn = torch.ones_like(generated)
 
-# if __name__ == "__main__":
-#     path = "./data/en_fr_small.tsv"
-#     df = pd.read_csv(path, sep="\t")
+            finished |= next_token.squeeze(1) == eos_id
+            if finished.all():
+                break
 
-#     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#     model = TransformerModel(d_model=128, num_heads=8, num_layers=2)#.to(device)
-#     optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
-#     pad_id = model.tokenizer.pad_token_id
-#     loss_fn = nn.CrossEntropyLoss(ignore_index=pad_id)
-
-#     # 같은 데이터셋을 3번 학습시킨다.
-#     for epoch in range(3):
-#         model.train()
-#         for i in range(len(df)):
-#             batch = df.iloc[i]
-#             print(batch)
-#             src = model.tokenizer(batch["en"], return_tensors="pt", padding=True)#.to(device)
-#             tgt = model.tokenizer(batch["fr"], return_tensors="pt", padding=True)#.to(device)
-
-#             decoder_inputs = tgt["input_ids"][:, :-1]
-#             decoder_mask = tgt["attention_mask"][:, :-1]
-#             labels = tgt["input_ids"][:, 1:]
-
-#             logits = model(
-#                 src["input_ids"],
-#                 decoder_inputs,
-#                 src_attention_mask=src["attention_mask"],
-#                 tgt_attention_mask=decoder_mask,
-#             )
-#             loss = loss_fn(logits.reshape(-1, logits.size(-1)), labels.reshape(-1))
-#             optimizer.zero_grad()
-#             loss.backward()
-#             optimizer.step()
+        texts = self.tokenizer.batch_decode(generated.tolist(), skip_special_tokens=True)
+        return texts
     
+
 if __name__ == "__main__":
     src = "I like coffee in the morning because it helps me wake up and stay focused."
     tgt = "J'aime le café le matin car il m'aide à me réveiller."
+
+    path = "./data/en_fr_small.tsv"
+    df = pd.read_csv(path, header=0, sep="\t")
+
     tf = TransformerModel(d_model=128, num_heads=8, num_layers=2)
-    logits = tf(src, tgt)
-    print("Result output :", logits, logits.shape)
+    logits = tf(df = df)
+    if logits is not None:
+        print("Logits output :", logits, logits.shape)
+    result = tf.predict(src)
+    print("Result output :", result)
