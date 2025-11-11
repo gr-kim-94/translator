@@ -145,8 +145,8 @@ class TransformerModel(nn.Module):
 
         x = self.tgt_embedding(token_ids)
         x = self.positional_encoding(x)
-
-        self_mask = self._build_decoder_mask(attention_mask)
+        # attention 후에 mask처리 -> 가중치를 다 결정한 후에 mask
+        self_mask = self._build_decoder_mask(attention_mask) # torch.tril : 하삼각 causal mask 처리
         cross_mask = self._build_cross_attention_mask(attention_mask, memory_attention_mask)
 
         for layer in self.decoder_layers:
@@ -163,9 +163,10 @@ class TransformerModel(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # memory : encoder output K/V
         # memory_mask : encoder padding 여부를 알 수 있는 mask.
+        logits = None
 
         self.train() # 학습 모드 전환
-
+        
         if df is not None and not df.isnull().values.any():
             for epoch in range(len(df)):
                 for _, row in df.iterrows():
@@ -187,7 +188,8 @@ class TransformerModel(nn.Module):
             decoded, _ = self.decode(tgt_token_ids, tgt_mask, memory, memory_mask)
 
             logits = self.generator(decoded)
-            return logits
+
+        return logits
 
     def predict(
         self,
@@ -205,6 +207,9 @@ class TransformerModel(nn.Module):
         bos_id = self.tokenizer.convert_tokens_to_ids(bos_token)
         eos_id = self.tokenizer.convert_tokens_to_ids(eos_token)
 
+        # memory.size(0) → 첫 번째 차원, 즉 배치 크기(batch_size)
+        # memory.size(1) → 입력 시퀀스 길이(src_seq_len)
+        # memory.size(2) → 임베딩 차원(d_model)
         batch_size = memory.size(0)
         generated = torch.full((batch_size, 1), bos_id, dtype=torch.long)
         attn = torch.ones_like(generated)
@@ -213,32 +218,41 @@ class TransformerModel(nn.Module):
 
         for _ in range(max_len):
             decoded, _ = self.decode(
-                generated,
-                attn,
+                generated,   # generated : 지금까지 생성된 토큰들 (이전 토큰들)
+                attn,        
                 memory,
                 memory_mask
             )
-            logits = self.generator(decoded)
-            next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
-            generated = torch.cat([generated, next_token], dim=1)
-            attn = torch.ones_like(generated)
+            logits = self.generator(decoded) 
 
-            finished |= next_token.squeeze(1) == eos_id
+            # logits[:, -1, :] : 마지막 토큰 위치에서 다음 단어 예측 분포
+            next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True) # argmax(dim=-1) 가장 확률이 높은 다음 토큰을 선택
+            generated = torch.cat([generated, next_token], dim=1)      # 새로 예측한 다음 단어(next_token)를 이어붙이는 과정
+            attn = torch.ones_like(generated)   # 새로 생성된 generated에 맞는 mask 생성.
+            
+            finished = finished | (next_token.squeeze(1) == eos_id) # EOS가 나온 배치 인덱스를 finished에 OR로 갱신.
             if finished.all():
                 break
 
+        # batch_decode 
+        # params > skip_special_tokens=True : BOS/EOS 같은 특수 토큰은 제거된다.
         texts = self.tokenizer.batch_decode(generated.tolist(), skip_special_tokens=True)
         return texts
     
 
 if __name__ == "__main__":
     src = "I like coffee in the morning because it helps me wake up and stay focused."
+    # tgt = "I like coffee in the morning because it helps me wake up and stay focused."
     tgt = "J'aime le café le matin car il m'aide à me réveiller."
+
+    # src = "See you later."
 
     path = "./data/en_fr_small.tsv"
     df = pd.read_csv(path, header=0, sep="\t")
 
     tf = TransformerModel(d_model=128, num_heads=8, num_layers=2)
+    # logits = tf(src, tgt)
+    
     logits = tf(df = df)
     if logits is not None:
         print("Logits output :", logits, logits.shape)
